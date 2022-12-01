@@ -17,6 +17,7 @@
 		animationSpeed: 1000,
 		updateInterval: 0.5, // every 0.5 minutes
 		apiBase: 'http://localhost',
+		apiAlbumArt:  'http://localhost',
 		apiPort: 5005,
 		apiEndpoint: 'zones',
  		exclude: []
@@ -52,15 +53,18 @@
 				var state = item.coordinator.state.playbackState;
 				var artist = item.coordinator.state.currentTrack.artist;
 				var track = item.coordinator.state.currentTrack.title;
-				var cover = item.coordinator.state.currentTrack.absoluteAlbumArtUri;
-//				var streamInfo = item.coordinator.state.currentTrack.streamInfo;
-				var type = item.coordinator.state.currentTrack.type;
+				var uri = item.coordinator.state.currentTrack.uri.toString();
+				var cover = this.getCover(uri, item);
+				// var streamInfo = item.coordinator.state.currentTrack.streamInfo;
+				var type = this.getType(uri, item);
+				// var type = item.coordinator.state.currentTrack.type;
 				var preroom = this.config.preRoomText;
 				var preartist = this.config.preArtistText;
 				var pretrack = this.config.preTrackText;
 				var pretype = this.config.preTypeText;
 				var prestream = this.config.preStreamText;
-				text += this.renderRoom(state, pretype, type, preroom, room, preartist, artist, pretrack, track, cover);
+				var volume =  item.members.length > 1 ? item.coordinator.groupState.volume : item.coordinator.state.volume;
+				text += this.renderRoom(state, pretype, type, preroom, room, preartist, artist, pretrack, track, cover, volume);
 			}
 		}.bind(this));
 		this.loaded = true;
@@ -75,14 +79,14 @@
 			this.hide(this.config.animationSpeed);
 		}
 	},
-	renderRoom: function(state, pretype, type, preroom, roomName, preartist, artist, pretrack, track, cover) {
+	renderRoom: function(state, pretype, type, preroom, roomName, preartist, artist, pretrack, track, cover, volume) {
 		artist = artist?artist:"";
 		track = track?track:"";
 		cover = cover?cover:"";
 		var room = '';
 		// show room name if 'showRoomName' is set and PLAYING or 'showStoppedRoom' is set
 		if(this.config.showRoomName && (state === 'PLAYING' || this.config.showStoppedRoom)) {
-			room += this.html.room.format(preroom, roomName);
+			// room += this.html.room.format(preroom, roomName, volume);
 		}	
 		// if Sonos Playbar is in TV mode, no title is provided and therefore the room should not be displayed
 		var isEmpty = (artist && artist.trim().length) == 0
@@ -90,14 +94,17 @@
 			&& (cover && cover.trim().length) == 0;
 		// show song if PLAYING
 		if(state === 'PLAYING' && !isEmpty) {
-			room += this.html.type.format(pretype, type.charAt(0).toUpperCase() + type.slice(1));
+			// room += this.html.type.format(pretype, type.charAt(0).toUpperCase() + type.slice(1));
 			room += this.html.song.format(
-				this.html.name.format(preartist, artist, pretrack, track)+
-				// show album art if 'showAlbumArt' is set
-				(this.config.showAlbumArt
-					?this.html.art.format(cover)
-					:''
-				)
+				this.html.name.format(preartist, artist, pretrack, track, 
+					this.html.room.format(preroom, roomName, volume),
+					this.html.type.format(pretype, type.charAt(0).toUpperCase() + type.slice(1))
+					)+
+					// show album art if 'showAlbumArt' is set
+					(this.config.showAlbumArt
+						?this.html.art.format(cover)
+						:''
+					)
 			);
 		}
 		return this.html.roomWrapper.format(room);
@@ -105,11 +112,37 @@
 	html: {
 		loading: '<div class="dimmed light small">Loading music ...</div>',
 		roomWrapper: '{0}',
-		room: '<div class="room xsmall">{0}{1}</div>',
 		song: '<div class="song">{0}</div>',
+		room: '<div class="room xsmall">{0}{1}<img class="volume" src="https://banner2.cleanpng.com/20191025/jkq/transparent-audio-icon-music-icon-sound-icon-5db3dcf0dafe24.942761031572068592897.jpg"/>{2}</div>',
 		type: '<div class="type normal small">{0}{1}</div>',
-		name: '<div class="name normal small"><div>{0}{1}</div><div>{2}{3}</div></div>',
+		name: '<div class="name normal small">{4}{5}<div class="title-wrapper"><div class="title">{2}{3}</div></div><div class="artist">{0}{1}</div></div>',
 		art: '<div class="art"><img src="{0}"/></div>',
+	},
+	getCover: function(uri, item){
+		var cover = "";
+		if(uri.includes("bluetooth")) {
+			cover = "https://img2.freepng.fr/20180320/tdw/kisspng-iphone-bluetooth-near-field-communication-wireless-bluetooth-icon-free-png-5ab17a62029c91.0971765315215806420107.jpg";
+		} else if (uri.includes("x-sonos-http:track") || uri.includes("x-sonosapi-stream:tunein") || uri.includes("x-sonosapi-radio:sonos") || uri.includes("x-sonos-spotify")) {
+			cover = item.coordinator.state.currentTrack.absoluteAlbumArtUri;
+		} else if (uri.includes("x-sonos-htastream")) {
+			cover = "https://w7.pngwing.com/pngs/669/222/png-transparent-tv-illustration-computer-icons-television-computer-keyboard-tv-icon-miscellaneous-angle-text.png";
+		}else {
+			cover = this.config.apiAlbumArt + item.coordinator.state.currentTrack.albumArtUri;
+		}
+		return cover;
+	},
+	getType: function(uri, item) {
+		var type = "";
+		if(uri.includes("x-sonosapi-stream")) {
+			type = "TV";
+		} else if (uri.includes("x-sonosapi-radio")) {
+			type = "Radio";
+		} else if (uri.includes("x-sonos-spotify")) {
+			type = "Spotify";
+		} else {
+			type = item.coordinator.state.currentTrack.type;
+		}
+		return type;
 	},
 	capitalize: function() {
 		return this.charAt(0).toUpperCase() + this.slice(1);
