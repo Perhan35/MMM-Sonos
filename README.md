@@ -16,27 +16,27 @@ Note from Snille: I'm new to the MagicMirror world and Node.js, this is my first
 
 When starting the Mirror:
 
-![Sonos Module Loading](https://github.com/Snille/MMM-Sonos/blob/master/.github/Sonos-Loading.png)
+![Sonos Module Loading](./.github/Sonos-Loading.png)
 
 Module on the Left side of the Mirror:
 
-![Sonos Module Left](https://github.com/Snille/MMM-Sonos/blob/master/.github/Sonos-Left.png)
+![Sonos Module Left](./.github/Sonos-Left.png)
 
 Module in the Center of the Mirror:
 
-![Sonos Module Center](https://github.com/Snille/MMM-Sonos/blob/master/.github/Sonos-Center.png)
+![Sonos Module Center](./.github/Sonos-Center.png)
 
 Module in the Center of the Mirror playing in 3 different zones:
 
-![Sonos Module Center](https://github.com/Snille/MMM-Sonos/blob/master/.github/Sonos-Multizone.png)
+![Sonos Module Center](./.github/Sonos-Multizone.png)
 
 Module on the Right side of the Mirror:
 
-![Sonos Module Right](https://github.com/Snille/MMM-Sonos/blob/master/.github/Sonos-Right.png)
+![Sonos Module Right](./.github/Sonos-Right.png)
 
 This is my own mirrors view (Top Center) using some addition in the custom.css [see below](#custom-css)
 
-![Sonos Module Custom CSS](https://github.com/Snille/MMM-Sonos/blob/master/.github/Sonos-Custom-CSS.png)
+![Sonos Module Custom CSS](./.github/Sonos-Custom-CSS.png)
 
 
 ## Usage

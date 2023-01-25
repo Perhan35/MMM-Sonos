@@ -50,11 +50,14 @@
 				room = isExcluded?'':room;
 			}
 			if(room !== ''){
+				var groupMasterUrl = this.getGroupMasterUrl(item.coordinator.uuid);
 				var state = item.coordinator.state.playbackState;
 				var artist = item.coordinator.state.currentTrack.artist;
 				var track = item.coordinator.state.currentTrack.title;
+				var trackTooLong = item.coordinator.state.currentTrack.title.length > 27;
 				var uri = item.coordinator.state.currentTrack.uri.toString();
-				var cover = this.getCover(uri, item);
+				var cover = this.getCover(uri, item, groupMasterUrl);
+				console.log(cover);
 				// var streamInfo = item.coordinator.state.currentTrack.streamInfo;
 				var type = this.getType(uri, item);
 				// var type = item.coordinator.state.currentTrack.type;
@@ -64,7 +67,13 @@
 				var pretype = this.config.preTypeText;
 				var prestream = this.config.preStreamText;
 				var volume =  item.members.length > 1 ? item.coordinator.groupState.volume : item.coordinator.state.volume;
-				text += this.renderRoom(state, pretype, type, preroom, room, preartist, artist, pretrack, track, cover, volume);
+				var elapsedTime = item.coordinator.state.elapsedTime;
+				var elapsedTimeFormatted = item.coordinator.state.elapsedTimeFormatted;
+				var trackDuration = item.coordinator.state.currentTrack.duration;
+				var trackPercent = this.getTrackPercent(elapsedTime, trackDuration);
+				var trackDurationFormatted = new Date(trackDuration * 1000).toISOString().substring(11, 19);
+				var showDuration = trackDuration === 0 ? false : true;
+				text += this.renderRoom(state, pretype, type, preroom, room, preartist, artist, pretrack, track, trackTooLong, cover, volume, elapsedTimeFormatted, trackPercent, trackDurationFormatted, showDuration);
 			}
 		}.bind(this));
 		this.loaded = true;
@@ -79,7 +88,7 @@
 			this.hide(this.config.animationSpeed);
 		}
 	},
-	renderRoom: function(state, pretype, type, preroom, roomName, preartist, artist, pretrack, track, cover, volume) {
+	renderRoom: function(state, pretype, type, preroom, roomName, preartist, artist, pretrack, track, trackTooLong, cover, volume, elapsedTimeFormatted, trackPercent, trackDurationFormatted, showDuration) {
 		artist = artist?artist:"";
 		track = track?track:"";
 		cover = cover?cover:"";
@@ -97,8 +106,10 @@
 			// room += this.html.type.format(pretype, type.charAt(0).toUpperCase() + type.slice(1));
 			room += this.html.song.format(
 				this.html.name.format(preartist, artist, pretrack, track, 
+					trackTooLong ? "animation" : "", //css class for animation if track name too long 
 					this.html.room.format(preroom, roomName, volume),
-					this.html.type.format(pretype, type.charAt(0).toUpperCase() + type.slice(1))
+					this.html.type.format(pretype, type.charAt(0).toUpperCase() + type.slice(1)),
+					this.html.progression.format(elapsedTimeFormatted, trackPercent, trackDurationFormatted, showDuration ? "" : "dontShow")
 					)+
 					// show album art if 'showAlbumArt' is set
 					(this.config.showAlbumArt
@@ -115,18 +126,31 @@
 		song: '<div class="song">{0}</div>',
 		room: '<div class="room xsmall">{0}{1}<img class="volume" src="https://banner2.cleanpng.com/20191025/jkq/transparent-audio-icon-music-icon-sound-icon-5db3dcf0dafe24.942761031572068592897.jpg"/>{2}</div>',
 		type: '<div class="type normal small">{0}{1}</div>',
-		name: '<div class="name normal small">{4}{5}<div class="title-wrapper"><div class="title">{2}{3}</div></div><div class="artist">{0}{1}</div></div>',
+		name: '<div class="name normal small">{5}{6}<div class="title-wrapper"><div class="title {4}">{2}{3}</div></div><div class="artist">{0}{1}</div>{7}</div>',
+		progression: '<div class="progression normal small {3}">{0}<progress value="{1}" max="100"></progress>{2}</div>',
 		art: '<div class="art"><img src="{0}"/></div>',
 	},
-	getCover: function(uri, item){
+	getGroupMasterUrl: function(uuid){
+		console.log(uuid);
+		if (uuid.includes("RINCON_38420B42B75E01400")) { //salon 
+			return "http://192.168.10.229:1400";
+		} else if (uuid.includes("RINCON_F0F6C1D2C77C01400")) { // Roam
+			return "http://192.168.10.52:1400";
+		} else {
+			return "";
+		}
+	},
+	getCover: function(uri, item, groupMasterUrl){
 		var cover = "";
 		if(uri.includes("bluetooth")) {
 			cover = "https://img2.freepng.fr/20180320/tdw/kisspng-iphone-bluetooth-near-field-communication-wireless-bluetooth-icon-free-png-5ab17a62029c91.0971765315215806420107.jpg";
-		} else if (uri.includes("x-sonos-http:track") || uri.includes("x-sonosapi-stream:tunein") || uri.includes("x-sonosapi-radio:sonos") || uri.includes("x-sonos-spotify")) {
-			cover = item.coordinator.state.currentTrack.absoluteAlbumArtUri;
+		// } else if (uri.includes("x-file-cifs")) {
+		// 	cover = "https://nascompares.com/wp-content/uploads/2022/10/Synology-DS923-NAS-Diskstation.png";
+		} else if (uri.includes("x-sonos-http:track") || uri.includes("x-sonosapi-stream:tunein") || uri.includes("x-sonosapi-radio:sonos") || uri.includes("x-sonos-spotify:spotify") || uri.includes("x-file-cifs")) {
+			cover = groupMasterUrl + item.coordinator.state.currentTrack.albumArtUri;
 		} else if (uri.includes("x-sonos-htastream")) {
 			cover = "https://w7.pngwing.com/pngs/669/222/png-transparent-tv-illustration-computer-icons-television-computer-keyboard-tv-icon-miscellaneous-angle-text.png";
-		}else {
+		} else {
 			cover = this.config.apiAlbumArt + item.coordinator.state.currentTrack.albumArtUri;
 		}
 		return cover;
@@ -139,10 +163,17 @@
 			type = "Radio";
 		} else if (uri.includes("x-sonos-spotify")) {
 			type = "Spotify";
+		} else if (uri.includes("bluetooth")) {
+			type = "Bluetooth";
+		} else if (uri.includes("x-file-cifs")) {
+			type = "NAS";
 		} else {
 			type = item.coordinator.state.currentTrack.type;
 		}
 		return type;
+	},
+	getTrackPercent: function(elapsedTime, trackDuration) {
+		return (elapsedTime / trackDuration) * 100;
 	},
 	capitalize: function() {
 		return this.charAt(0).toUpperCase() + this.slice(1);
