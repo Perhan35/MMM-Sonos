@@ -54,10 +54,9 @@
 				var state = item.coordinator.state.playbackState;
 				var artist = item.coordinator.state.currentTrack.artist;
 				var track = item.coordinator.state.currentTrack.title;
-				var trackTooLong = item.coordinator.state.currentTrack.title.length > 27;
+				var trackTooLong = this.track ? this.track.length > 27 : false;
 				var uri = item.coordinator.state.currentTrack.uri.toString();
 				var cover = this.getCover(uri, item, groupMasterUrl);
-				console.log(cover);
 				// var streamInfo = item.coordinator.state.currentTrack.streamInfo;
 				var type = this.getType(uri, item);
 				// var type = item.coordinator.state.currentTrack.type;
@@ -131,11 +130,14 @@
 		art: '<div class="art"><img src="{0}"/></div>',
 	},
 	getGroupMasterUrl: function(uuid){
-		console.log(uuid);
-		if (uuid.includes("RINCON_38420B42B75E01400")) { //salon 
-			return "http://192.168.10.229:1400";
-		} else if (uuid.includes("RINCON_F0F6C1D2C77C01400")) { // Roam
-			return "http://192.168.10.52:1400";
+		if (uuid.includes("RINCON_38420B42B75E01400")) { 		//salon 
+			return "http://192.168.10.228:1400";
+		} else if (uuid.includes("RINCON_542A1BFC967001400")) { // Salle de bain
+			return "http://192.168.10.230:1400";
+		} else if (uuid.includes("RINCON_542A1BFC97A601400")) { // Cuisine
+			return "http://192.168.10.120:1400";
+		} else if (uuid.includes("RINCON_542A1BB2FBB401400")) { // Sonos Roam
+			return "http://192.168.10.194:1400";
 		} else {
 			return "";
 		}
@@ -144,14 +146,15 @@
 		var cover = "";
 		if(uri.includes("bluetooth")) {
 			cover = "https://img2.freepng.fr/20180320/tdw/kisspng-iphone-bluetooth-near-field-communication-wireless-bluetooth-icon-free-png-5ab17a62029c91.0971765315215806420107.jpg";
-		// } else if (uri.includes("x-file-cifs")) {
-		// 	cover = "https://nascompares.com/wp-content/uploads/2022/10/Synology-DS923-NAS-Diskstation.png";
-		} else if (uri.includes("x-sonos-http:track") || uri.includes("x-sonosapi-stream:tunein") || uri.includes("x-sonosapi-radio:sonos") || uri.includes("x-sonos-spotify:spotify") || uri.includes("x-file-cifs")) {
+		} else if (uri.includes("x-sonos-http:track") || uri.includes("airplay")) {
+			cover = item.coordinator.state.currentTrack.absoluteAlbumArtUri;
+		} else if (uri.includes("x-sonosapi-stream:tunein") || uri.includes("x-sonosapi-radio:sonos") || uri.includes("x-sonos-spotify:spotify") || uri.includes("x-file-cifs")) {
 			cover = groupMasterUrl + item.coordinator.state.currentTrack.albumArtUri;
 		} else if (uri.includes("x-sonos-htastream")) {
 			cover = "https://w7.pngwing.com/pngs/669/222/png-transparent-tv-illustration-computer-icons-television-computer-keyboard-tv-icon-miscellaneous-angle-text.png";
 		} else {
 			cover = this.config.apiAlbumArt + item.coordinator.state.currentTrack.albumArtUri;
+			//cover = "http://server.perhan.local:5005/sonos-icon.png"
 		}
 		return cover;
 	},
@@ -167,6 +170,14 @@
 			type = "Bluetooth";
 		} else if (uri.includes("x-file-cifs")) {
 			type = "NAS";
+		} else if (uri.includes("x-sonos-http:song")) {
+			type = "Apple Music";
+		} else if (uri.includes("soundcloud")) {
+			type = "Soundcloud";
+		} else if (uri.includes("cloudcast")) {
+			type = "Mixcould";
+		} else if (uri.includes("airplay")) {
+			type = "AirPlay";
 		} else {
 			type = item.coordinator.state.currentTrack.type;
 		}
