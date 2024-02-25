@@ -15,13 +15,12 @@ module.exports = NodeHelper.create({
   //Subclass socketNotificationReceived received.
   socketNotificationReceived: function(notification, url) {
     if (notification === 'SONOS_UPDATE') {
-      //console.log(notification);
       var self = this;
       request(url, function(error, response, body) {
         if (!error && response.statusCode == 200) {
           self.sendSocketNotification('SONOS_DATA', JSON.parse(body));
         } else {
-      		console.error('Failure: ' + error);
+      		console.error('Failure sonos: ' + error);
         }
       });
     }
