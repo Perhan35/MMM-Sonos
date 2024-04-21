@@ -130,7 +130,7 @@
 		art: '<div class="art"><img src="{0}"/></div>',
 	},
 	getGroupMasterUrl: function(uuid){
-		if (uuid.includes("RINCON_38420B42B75E01400")) { 		//salon 
+		if (uuid.includes("RINCON_38420B42B75E01400")) { 				// Salon 
 			return "http://192.168.10.228:1400";
 		} else if (uuid.includes("RINCON_542A1BFC967001400")) { // Salle de bain
 			return "http://192.168.10.230:1400";
@@ -138,6 +138,8 @@
 			return "http://192.168.10.120:1400";
 		} else if (uuid.includes("RINCON_542A1BB2FBB401400")) { // Sonos Roam
 			return "http://192.168.10.194:1400";
+		} else if (uuid.includes("RINCON_C43875E3DA5C01400")) { // Bureau
+			return "http://192.168.10.233:1400";
 		} else {
 			return "";
 		}
@@ -152,6 +154,8 @@
 			cover = groupMasterUrl + item.coordinator.state.currentTrack.albumArtUri;
 		} else if (uri.includes("x-sonos-htastream")) {
 			cover = "https://w7.pngwing.com/pngs/669/222/png-transparent-tv-illustration-computer-icons-television-computer-keyboard-tv-icon-miscellaneous-angle-text.png";
+		} else if (uri.includes("x-rincon-stream")) {
+			cover = "https://www.pioneerdj.com/-/media/pioneerdj/images/features/controller/ddj-flx4/ddj-flx4_hotspot_top_pc.png";
 		} else {
 			cover = this.config.apiAlbumArt + item.coordinator.state.currentTrack.albumArtUri;
 			//cover = "http://server.perhan.local:5005/sonos-icon.png"
@@ -166,6 +170,8 @@
 			type = "Radio";
 		} else if (uri.includes("x-sonos-spotify")) {
 			type = "Spotify";
+		} else if (uri.includes("x-rincon-stream")) {
+			type = "Line-in";
 		} else if (uri.includes("bluetooth")) {
 			type = "Bluetooth";
 		} else if (uri.includes("x-file-cifs")) {
