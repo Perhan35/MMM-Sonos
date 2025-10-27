@@ -18,25 +18,10 @@ When starting the Mirror:
 
 ![Sonos Module Loading](./.github/Sonos-Loading.png)
 
-Module on the Left side of the Mirror:
-
-![Sonos Module Left](./.github/Sonos-Left.png)
-
-Module in the Center of the Mirror:
-
-![Sonos Module Center](./.github/Sonos-Center.png)
-
-Module in the Center of the Mirror playing in 3 different zones:
-
-![Sonos Module Center](./.github/Sonos-Multizone.png)
-
 Module on the Right side of the Mirror:
 
 ![Sonos Module Right](./.github/Sonos-Right.png)
 
-This is my own mirrors view (Top Center) using some addition in the custom.css [see below](#custom-css)
-
-![Sonos Module Custom CSS](./.github/Sonos-Custom-CSS.png)
 
 
 ## Usage

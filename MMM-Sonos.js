@@ -123,14 +123,14 @@
 		loading: '<div class="dimmed light small">Loading music ...</div>',
 		roomWrapper: '{0}',
 		song: '<div class="song">{0}</div>',
-		room: '<div class="room xsmall">{0}{1}<img class="volume" src="https://banner2.cleanpng.com/20191025/jkq/transparent-audio-icon-music-icon-sound-icon-5db3dcf0dafe24.942761031572068592897.jpg"/>{2}</div>',
+		room: '<div class="room xsmall">{0}{1}<img class="volume" src="https://icon2.cleanpng.com/20201213/uah/transparent-speaker-interface-audio-symbol-icon-coolicons-icon-5fd5b49e4a8e49.7978144816078409263054.jpg"/>{2}</div>',
 		type: '<div class="type normal small">{0}{1}</div>',
 		name: '<div class="name normal small">{5}{6}<div class="title-wrapper"><div class="title {4}">{2}{3}</div></div><div class="artist">{0}{1}</div>{7}</div>',
 		progression: '<div class="progression normal small {3}">{0}<progress value="{1}" max="100"></progress>{2}</div>',
 		art: '<div class="art"><img src="{0}"/></div>',
 	},
 	getGroupMasterUrl: function(uuid){
-		if (uuid.includes("RINCON_38420B42B75E01400")) { 				// Salon 
+		if (uuid.includes("RINCON_38420B42B75E01400")) { 		// Salon 
 			return "http://192.168.10.228:1400";
 		} else if (uuid.includes("RINCON_542A1BFC967001400")) { // Salle de bain
 			return "http://192.168.10.230:1400";
@@ -147,7 +147,7 @@
 	getCover: function(uri, item, groupMasterUrl){
 		var cover = "";
 		if(uri.includes("bluetooth")) {
-			cover = "https://img2.freepng.fr/20180320/tdw/kisspng-iphone-bluetooth-near-field-communication-wireless-bluetooth-icon-free-png-5ab17a62029c91.0971765315215806420107.jpg";
+			cover = "https://banner2.cleanpng.com/20180529/wif/kisspng-bluetooth-headset-clip-art-farmet-5b0cfc9c5feaa0.0254480115275777563929.jpg";
 		} else if (uri.includes("x-sonos-http:track") || uri.includes("airplay")) {
 			cover = item.coordinator.state.currentTrack.absoluteAlbumArtUri;
 		} else if (uri.includes("x-sonosapi-stream:tunein") || uri.includes("x-sonosapi-radio:sonos") || uri.includes("x-sonos-spotify:spotify") || uri.includes("x-file-cifs")) {
@@ -157,9 +157,7 @@
 		} else if (uri.includes("x-rincon-stream")) {
 			cover = "https://www.pioneerdj.com/-/media/pioneerdj/images/features/controller/ddj-flx4/ddj-flx4_hotspot_top_pc.png";
 		} else {
-			cover = this.config.apiAlbumArt + item.coordinator.state.currentTrack.albumArtUri;
-			//cover = "http://server.perhan.local:5005/sonos-icon.png"
-		}
+			cover = this.config.apiAlbumArt + item.coordinator.state.currentTrack.albumArtUri;		}
 		return cover;
 	},
 	getType: function(uri, item) {
