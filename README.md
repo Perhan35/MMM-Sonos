@@ -84,11 +84,33 @@ Here are the configuration options to configure the module.
 |`preTrackText`|Text to be displayed before the track name.<br><br>**Default value:** `Track: `|
 |`preTypeText`|Text to be displayed before the source name.<br><br>**Default value:** `Source: `|
 |`animationSpeed`|Lenght of the fade animation.<br><br>**Default value:** `1000`|
-|`updateInterval`|Update interval.<br><br>**Default value:** `0.5`|
+|`updateInterval`|Update interval in minutes. With the [webhook](#real-time-updates-webhook) set up, this is only a fallback (and refreshes the progress bar).<br><br>**Default value:** `0.5`|
 |`apiBase`|http link to the SONOS API.<br><br>**Default value:** `http://localhost'`|
 |`apiPort`|SONOS API port.<br><br>**Default value:** `5005`|
 |`apiEndpoint`|Link to the "zones" information on the SONOS API.<br><br>**Default value:** `zones`|
 |`exclude`|Zones names to exclude ["Secret-Room","Greenhouse"].<br><br>**Default value:** `[]`|
+
+### Real-time updates (webhook)
+
+By default the module asks the Sonos API for updates every `updateInterval` (30 seconds), so track changes can show up late. To refresh instantly, let node-sonos-http-api notify the mirror on every Sonos event.
+
+Add this to node-sonos-http-api's `settings.json`, then restart it:
+
+```json
+{
+  "webhook": "http://localhost:8080/MMM-Sonos/webhook"
+}
+```
+
+- `8080` is MagicMirror's default port: use yours if you changed it.
+- If node-sonos-http-api runs on **another machine** than the mirror, replace `localhost` with the mirror's address and add the API machine's IP to `ipWhitelist` in MagicMirror's `config.js` (by default only localhost is allowed, other calls get a `403`).
+- node-sonos-http-api supports **only one** webhook URL: if you already use it for something else (e.g. Home Assistant), this replaces it.
+
+To check it works, run this on the mirror: the display should refresh right away.
+
+```
+curl -X POST http://localhost:8080/MMM-Sonos/webhook
+```
 
 ### Custom-CSS
 

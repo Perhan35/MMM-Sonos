@@ -20,6 +20,7 @@
 		apiAlbumArt:  'http://localhost',
 		apiPort: 5005,
 		apiEndpoint: 'zones',
+		speakerUrls: {}, // optional: { 'Living Room': 'http://<ip>:1400' }
  		exclude: []
 	},
 	start: function() {
@@ -50,13 +51,12 @@
 				room = isExcluded?'':room;
 			}
 			if(room !== ''){
-				var groupMasterUrl = this.getGroupMasterUrl(item.coordinator.uuid);
 				var state = item.coordinator.state.playbackState;
 				var artist = item.coordinator.state.currentTrack.artist;
 				var track = item.coordinator.state.currentTrack.title;
 				var trackTooLong = this.track ? this.track.length > 27 : false;
 				var uri = item.coordinator.state.currentTrack.uri.toString();
-				var cover = this.getCover(uri, item, groupMasterUrl);
+				var cover = this.getCover(uri, item);
 				// var streamInfo = item.coordinator.state.currentTrack.streamInfo;
 				var type = this.getType(uri, item);
 				// var type = item.coordinator.state.currentTrack.type;
@@ -132,37 +132,35 @@
 		art: '<div class="art"><img src="{0}"/></div>',
 		artIcon: '<div class="art"><i class="{0}"></i></div>',
 	},
-	getGroupMasterUrl: function(uuid){
-		if (uuid.includes("RINCON_38420B42B75E01400")) { 		// Salon 
-			return "http://192.168.10.228:1400";
-		} else if (uuid.includes("RINCON_542A1BFC967001400")) { // Salle de bain
-			return "http://192.168.10.230:1400";
-		} else if (uuid.includes("RINCON_542A1BFC97A601400")) { // Cuisine
-			return "http://192.168.10.120:1400";
-		} else if (uuid.includes("RINCON_542A1BB2FBB401400")) { // Sonos Roam
-			return "http://192.168.10.194:1400";
-		} else if (uuid.includes("RINCON_C43875E3DA5C01400")) { // Bureau
-			return "http://192.168.10.233:1400";
-		} else {
-			return "";
-		}
+	// Base URL ("http://<ip>:1400") of a speaker, from the optional
+	// 'speakerUrls' config, keyed by room name or UUID.
+	getSpeakerUrl: function(coordinator){
+		var urls = this.config.speakerUrls || {};
+		return urls[coordinator.roomName] || urls[coordinator.uuid] || '';
 	},
-	getCover: function(uri, item, groupMasterUrl){
-		var cover = "";
-		if(uri.includes("bluetooth")) {
+	getCover: function(uri, item){
+		var track = item.coordinator.state.currentTrack;
+		if (uri.includes("bluetooth")) {
 			// Font Awesome icon instead of an image (see renderRoom)
-			cover = "icon:fa-brands fa-bluetooth";
-		} else if (uri.includes("x-sonos-http:track") || uri.includes("airplay")) {
-			cover = item.coordinator.state.currentTrack.absoluteAlbumArtUri;
-		} else if (uri.includes("x-sonosapi-stream:tunein") || uri.includes("x-sonosapi-radio:sonos") || uri.includes("x-sonos-spotify:spotify") || uri.includes("x-file-cifs")) {
-			cover = groupMasterUrl + item.coordinator.state.currentTrack.albumArtUri;
-		} else if (uri.includes("x-sonos-htastream")) {
-			cover = "https://w7.pngwing.com/pngs/669/222/png-transparent-tv-illustration-computer-icons-television-computer-keyboard-tv-icon-miscellaneous-angle-text.png";
-		} else if (uri.includes("x-rincon-stream")) {
-			cover = "https://www.pioneerdj.com/-/media/pioneerdj/images/features/controller/ddj-flx4/ddj-flx4_hotspot_top_pc.png";
-		} else {
-			cover = this.config.apiAlbumArt + item.coordinator.state.currentTrack.albumArtUri;		}
-		return cover;
+			return "icon:fa-brands fa-bluetooth";
+		}
+		if (uri.includes("x-sonos-htastream")) {
+			return "https://w7.pngwing.com/pngs/669/222/png-transparent-tv-illustration-computer-icons-television-computer-keyboard-tv-icon-miscellaneous-angle-text.png";
+		}
+		if (uri.includes("x-rincon-stream")) {
+			return "https://www.pioneerdj.com/-/media/pioneerdj/images/features/controller/ddj-flx4/ddj-flx4_hotspot_top_pc.png";
+		}
+		// node-sonos-http-api already resolves the full URL
+		// (speaker address + path, or a high-res cover).
+		if (track.absoluteAlbumArtUri) {
+			return track.absoluteAlbumArtUri;
+		}
+		var art = track.albumArtUri || "";
+		if (art === "" || /^https?:\/\//.test(art)) {
+			return art;
+		}
+		// Relative path: served by the speaker itself.
+		return (this.getSpeakerUrl(item.coordinator) || this.config.apiAlbumArt) + art;
 	},
 	getType: function(uri, item) {
 		var type = "";
