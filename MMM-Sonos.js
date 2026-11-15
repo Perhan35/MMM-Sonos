@@ -35,11 +35,11 @@
 	},
 	render: function(data){
 		var text = '';
-		$.each(data, function (i, item) {
+		(Array.isArray(data) ? data : []).forEach(function (item) {
 			var room = '';
 			var isGroup = item.members.length > 1;
 			if(isGroup){
-				$.each(item.members, function (j, member) {
+				item.members.forEach(function (member) {
 					var isExcluded = this.config.exclude.indexOf(member.roomName) !== -1;
 					room += isExcluded?'':(member.roomName + ', ');
 				}.bind(this));
@@ -112,7 +112,9 @@
 					)+
 					// show album art if 'showAlbumArt' is set
 					(this.config.showAlbumArt
-						?this.html.art.format(cover)
+						?(cover.indexOf('icon:') === 0
+							?this.html.artIcon.format(cover.slice(5))
+							:this.html.art.format(cover))
 						:''
 					)
 			);
@@ -123,11 +125,12 @@
 		loading: '<div class="dimmed light small">Loading music ...</div>',
 		roomWrapper: '{0}',
 		song: '<div class="song">{0}</div>',
-		room: '<div class="room xsmall">{0}{1}<img class="volume" src="https://icon2.cleanpng.com/20201213/uah/transparent-speaker-interface-audio-symbol-icon-coolicons-icon-5fd5b49e4a8e49.7978144816078409263054.jpg"/>{2}</div>',
+		room: '<div class="room xsmall">{0}{1}<i class="fa-solid fa-volume-high volume"></i>{2}</div>',
 		type: '<div class="type normal small">{0}{1}</div>',
 		name: '<div class="name normal small">{5}{6}<div class="title-wrapper"><div class="title {4}">{2}{3}</div></div><div class="artist">{0}{1}</div>{7}</div>',
 		progression: '<div class="progression normal small {3}">{0}<progress value="{1}" max="100"></progress>{2}</div>',
 		art: '<div class="art"><img src="{0}"/></div>',
+		artIcon: '<div class="art"><i class="{0}"></i></div>',
 	},
 	getGroupMasterUrl: function(uuid){
 		if (uuid.includes("RINCON_38420B42B75E01400")) { 		// Salon 
@@ -147,7 +150,8 @@
 	getCover: function(uri, item, groupMasterUrl){
 		var cover = "";
 		if(uri.includes("bluetooth")) {
-			cover = "https://banner2.cleanpng.com/20180529/wif/kisspng-bluetooth-headset-clip-art-farmet-5b0cfc9c5feaa0.0254480115275777563929.jpg";
+			// Font Awesome icon instead of an image (see renderRoom)
+			cover = "icon:fa-brands fa-bluetooth";
 		} else if (uri.includes("x-sonos-http:track") || uri.includes("airplay")) {
 			cover = item.coordinator.state.currentTrack.absoluteAlbumArtUri;
 		} else if (uri.includes("x-sonosapi-stream:tunein") || uri.includes("x-sonosapi-radio:sonos") || uri.includes("x-sonos-spotify:spotify") || uri.includes("x-file-cifs")) {
@@ -195,8 +199,7 @@
 	},
 	getScripts: function() {
 		return [
-			'String.format.js',
-			'//cdnjs.cloudflare.com/ajax/libs/jquery/2.2.2/jquery.js'
+			'String.format.js'
 		];
 	},
 	getStyles: function() {
@@ -211,7 +214,10 @@
 		}else{
 			content = '<ul>'+this.dom+'</ul>';
 		}
-		return $('<div class="sonos">'+content+'</div>')[0];
+		var wrapper = document.createElement('div');
+		wrapper.className = 'sonos';
+		wrapper.innerHTML = content;
+		return wrapper;
 	},
 	socketNotificationReceived: function(notification, payload) {
 	if (notification === 'SONOS_DATA') {

@@ -14,6 +14,10 @@
 .sonos ul .art img {
   height: 100px;
 }
+.sonos ul .art i {
+  font-size: 100px;
+  line-height: 100px;
+}
 .sonos ul .type,
 .sonos ul .room {
   font-size: 50%;
