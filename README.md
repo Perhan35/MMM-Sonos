@@ -1,8 +1,3 @@
-> The NPM module "Request" was removed with Magicmirror `v2.16` This has
-> led to the fact that Magicmirror can no longer be started under
-> Docker, for example. With this fork, the deprecated npm module
-> "Request" is installed locally in the module's directory.
-
 # MMM-Sonos
 
 <p>
@@ -28,7 +23,7 @@ Module on the Right side of the Mirror:
 
 _Prerequisites_
 
-- requires MagicMirror v2.0.0
+- requires MagicMirror² running on Node.js 18 or newer
 - install and [run](https://github.com/MichMich/MagicMirror/wiki/Auto-Starting-MagicMirror) [node-sonos-http-api](https://github.com/jishi/node-sonos-http-api)
 
 ### Installation
@@ -42,16 +37,10 @@ cd ~/MagicMirror/modules
 Clone this repository:
 
 ```
-git clone https://github.com/Snille/MMM-Sonos.git
+git clone https://github.com/Perhan35/MMM-Sonos.git
 ```
-Install Node-Modules
-```
-npm init
-````
-&
-````
-npm install request
-````
+
+No `npm install` is needed: the module has no dependencies.
 
 
 Add some [config entries](#configuration) to your config.js file. After that the content will be added to your mirror.
@@ -76,19 +65,22 @@ Here are the configuration options to configure the module.
 
 | Option | Description |
 |---|---| 
-|`showStoppedRoom`|Trigger the visualization of stopped rooms.<br><br>**Default value:** `true`|
-|`showAlbumArt`|Trigger the visualization of the album art.<br><br>**Default value:** `true`|
-|`showRoomName`|Trigger the visualization of the room name.<br><br>**Default value:** `true`|
+|`showAlbumArt`|Show the album art.<br><br>**Default value:** `true`|
+|`showRoomName`|Show the zone name and volume.<br><br>**Default value:** `true`|
 |`preRoomText`|Text to be displayed before the zone name.<br><br>**Default value:** `Zone: `|
 |`preArtistText`|Text to be displayed before the artist name.<br><br>**Default value:** `Artist: `|
 |`preTrackText`|Text to be displayed before the track name.<br><br>**Default value:** `Track: `|
 |`preTypeText`|Text to be displayed before the source name.<br><br>**Default value:** `Source: `|
-|`animationSpeed`|Lenght of the fade animation.<br><br>**Default value:** `1000`|
+|`animationSpeed`|Length of the fade animation in ms (used when the song changes).<br><br>**Default value:** `1000`|
 |`updateInterval`|Update interval in minutes. With the [webhook](#real-time-updates-webhook) set up, this is only a fallback (and refreshes the progress bar).<br><br>**Default value:** `0.5`|
-|`apiBase`|http link to the SONOS API.<br><br>**Default value:** `http://localhost'`|
+|`apiBase`|http link to the SONOS API.<br><br>**Default value:** `http://localhost`|
 |`apiPort`|SONOS API port.<br><br>**Default value:** `5005`|
 |`apiEndpoint`|Link to the "zones" information on the SONOS API.<br><br>**Default value:** `zones`|
-|`exclude`|Zones names to exclude ["Secret-Room","Greenhouse"].<br><br>**Default value:** `[]`|
+|`exclude`|Zone names to exclude, e.g. `["Secret-Room", "Greenhouse"]`.<br><br>**Default value:** `[]`|
+|`speakerUrls`|Optional. Only needed if some album art is missing. The API usually gives the full album art address; when it only gives a path, the module uses this speaker address. Keys are room names (or speaker UUIDs), e.g. `{ "Living Room": "http://192.168.1.20:1400" }`.<br><br>**Default value:** `{}`|
+|`apiAlbumArt`|Fallback address for album art paths when the room is not in `speakerUrls`.<br><br>**Default value:** `http://localhost`|
+
+The module only shows zones that are playing, and hides itself when nothing plays.
 
 ### Real-time updates (webhook)
 
@@ -148,13 +140,4 @@ Here is my CSS settings for the module that I have added to my custom.css to giv
 	line-height: 16px;
 }
 /*****************************************************/
-```
-
-### Known Issues
-
-The module may not be able to access the data of the sonos API due to a Cross-Origin Resource Sharing (CORS) issue. This could be solved by adding the following lines to the `sonos-http-api.js` just before `res.write(new Buffer(jsonResponse));` in the sonos api. Remember to restart the service after the change.
-
-```
-  res.setHeader("Access-Control-Allow-Origin", "http://localhost");
-  res.setHeader("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
 ```

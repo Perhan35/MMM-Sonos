@@ -6,17 +6,21 @@
  * MIT Licensed.
  */
 var NodeHelper = require('node_helper');
-var request = require('request');
 
 // node-sonos-http-api sends events in bursts (one per group member, plus
 // volume/topology changes): wait a bit and refresh only once.
 var WEBHOOK_DEBOUNCE_MS = 300;
+var FETCH_TIMEOUT_MS = 10000;
 
 module.exports = NodeHelper.create({
   start: function () {
     console.log('Sonos helper started ...');
     this.url = null;
     this.webhookTimer = null;
+    this.fetching = false;     // a request is running
+    this.fetchAgain = false;   // another one was asked meanwhile
+    this.forceSend = false;    // send even if data did not change
+    this.lastSent = null;      // JSON of the last data sent
     this.registerWebhook();
   },
 
@@ -33,35 +37,87 @@ module.exports = NodeHelper.create({
       }
       clearTimeout(self.webhookTimer);
       self.webhookTimer = setTimeout(function() {
-        self.fetchZones();
+        self.fetchZones(false);
       }, WEBHOOK_DEBOUNCE_MS);
     });
     console.log('Sonos webhook listening on ' + path);
   },
 
-  fetchZones: function() {
+  // force: send the data even if it did not change (the frontend asked,
+  // e.g. a new browser window). Webhook calls only send real changes.
+  fetchZones: function(force) {
     var self = this;
-    request(this.url, function(error, response, body) {
-      if (error || response.statusCode != 200) {
-        console.error('Failure sonos: ' + (error || ('HTTP ' + response.statusCode)));
-        return;
-      }
-      var data;
-      try {
-        data = JSON.parse(body);
-      } catch (e) {
-        console.error('Failure sonos: invalid JSON (' + e.message + ')');
-        return;
-      }
-      self.sendSocketNotification('SONOS_DATA', data);
+    this.forceSend = this.forceSend || force;
+    if (this.fetching) {
+      // slow API or slow device: never run two requests at once
+      this.fetchAgain = true;
+      return;
+    }
+    this.fetching = true;
+    fetch(this.url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+      .then(function(response) {
+        if (!response.ok) {
+          throw new Error('HTTP ' + response.status);
+        }
+        return response.json();
+      })
+      .then(function(data) {
+        var json = JSON.stringify(self.slimZones(data));
+        if (self.forceSend || json !== self.lastSent) {
+          self.lastSent = json;
+          self.forceSend = false;
+          self.sendSocketNotification('SONOS_DATA', JSON.parse(json));
+        }
+      })
+      .catch(function(error) {
+        console.error('Failure sonos: ' + error.message);
+      })
+      .finally(function() {
+        self.fetching = false;
+        if (self.fetchAgain) {
+          self.fetchAgain = false;
+          self.fetchZones(false);
+        }
+      });
+  },
+
+  // The zones answer is big (full state of every speaker): keep only what
+  // the frontend shows, so less data goes over the socket and to the browser.
+  slimZones: function(zones) {
+    return (Array.isArray(zones) ? zones : []).map(function(zone) {
+      var c = zone.coordinator || {};
+      var state = c.state || {};
+      var t = state.currentTrack || {};
+      return {
+        members: (zone.members || []).map(function(m) { return { roomName: m.roomName }; }),
+        coordinator: {
+          uuid: c.uuid,
+          roomName: c.roomName,
+          groupState: { volume: (c.groupState || {}).volume },
+          state: {
+            playbackState: state.playbackState,
+            volume: state.volume,
+            elapsedTime: state.elapsedTime,
+            elapsedTimeFormatted: state.elapsedTimeFormatted,
+            currentTrack: {
+              uri: t.uri,
+              type: t.type,
+              artist: t.artist,
+              title: t.title,
+              duration: t.duration,
+              albumArtUri: t.albumArtUri,
+              absoluteAlbumArtUri: t.absoluteAlbumArtUri
+            }
+          }
+        }
+      };
     });
   },
 
-  //Subclass socketNotificationReceived received.
   socketNotificationReceived: function(notification, url) {
     if (notification === 'SONOS_UPDATE') {
       this.url = url;
-      this.fetchZones();
+      this.fetchZones(true);
     }
   }
 });
