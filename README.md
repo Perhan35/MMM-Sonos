@@ -79,6 +79,7 @@ Here are the configuration options to configure the module.
 |`exclude`|Zone names to exclude, e.g. `["Secret-Room", "Greenhouse"]`.<br><br>**Default value:** `[]`|
 |`speakerUrls`|Optional. Only needed if some album art is missing. The API usually gives the full album art address; when it only gives a path, the module uses this speaker address. Keys are room names (or speaker UUIDs), e.g. `{ "Living Room": "http://192.168.1.20:1400" }`.<br><br>**Default value:** `{}`|
 |`apiAlbumArt`|Fallback address for album art paths when the room is not in `speakerUrls`.<br><br>**Default value:** `http://localhost`|
+|`proxyAlbumArt`|The mirror fetches the album art and serves it to the browser. Needed when the screen showing the mirror cannot reach the speakers (other network/VLAN, no internet) or opens the mirror over https. Only images given by the Sonos API, or on a known speaker, are fetched. Set `false` to load images straight from the speakers.<br><br>**Default value:** `true`|
 
 The module only shows zones that are playing, and hides itself when nothing plays.
 

@@ -20,6 +20,7 @@ Module.register('MMM-Sonos', {
 		apiEndpoint: 'zones',
 		apiAlbumArt: 'http://localhost',
 		speakerUrls: {}, // optional: { 'Living Room': 'http://<ip>:1400' }
+		proxyAlbumArt: true, // the mirror fetches the album art for the browser
 		exclude: []
 	},
 
@@ -44,7 +45,10 @@ Module.register('MMM-Sonos', {
 
 	update: function() {
 		var url = this.config.apiBase + ':' + this.config.apiPort + '/' + this.config.apiEndpoint;
-		this.sendSocketNotification('SONOS_UPDATE', url);
+		var speakerUrls = this.config.speakerUrls || {};
+		var artOrigins = Object.keys(speakerUrls).map(function(key) { return speakerUrls[key]; });
+		artOrigins.push(this.config.apiAlbumArt);
+		this.sendSocketNotification('SONOS_UPDATE', { url: url, artOrigins: artOrigins });
 	},
 
 	socketNotificationReceived: function(notification, payload) {
@@ -159,14 +163,24 @@ Module.register('MMM-Sonos', {
 		// node-sonos-http-api already resolves the full URL
 		// (speaker address + path, or a high-res cover).
 		if (track.absoluteAlbumArtUri) {
-			return track.absoluteAlbumArtUri;
+			return this.artSrc(track.absoluteAlbumArtUri);
 		}
 		var art = track.albumArtUri || '';
 		if (art === '' || /^https?:\/\//.test(art)) {
-			return art;
+			return this.artSrc(art);
 		}
 		// relative path: served by the speaker itself
-		return (this.getSpeakerUrl(item.coordinator) || this.config.apiAlbumArt) + art;
+		return this.artSrc((this.getSpeakerUrl(item.coordinator) || this.config.apiAlbumArt) + art);
+	},
+
+	// Album art through the mirror (see node_helper.js): works even when the
+	// browser cannot reach the speakers or the internet. Relative URL, so it
+	// also works with a basePath.
+	artSrc: function(url) {
+		if (!url || !this.config.proxyAlbumArt) {
+			return url;
+		}
+		return this.name + '/albumart?url=' + encodeURIComponent(url);
 	},
 
 	// First match wins: keep the more specific patterns first.

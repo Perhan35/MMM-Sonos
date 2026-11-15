@@ -11,6 +11,8 @@ var NodeHelper = require('node_helper');
 // volume/topology changes): wait a bit and refresh only once.
 var WEBHOOK_DEBOUNCE_MS = 300;
 var FETCH_TIMEOUT_MS = 10000;
+var MAX_ART_BYTES = 5 * 1024 * 1024;
+var ART_CACHE_SECONDS = 86400;
 
 module.exports = NodeHelper.create({
   start: function () {
@@ -21,7 +23,11 @@ module.exports = NodeHelper.create({
     this.fetchAgain = false;   // another one was asked meanwhile
     this.forceSend = false;    // send even if data did not change
     this.lastSent = null;      // JSON of the last data sent
+    this.artUrls = new Set();     // album art URLs given by the API
+    this.artOrigins = new Set();  // speaker addresses ("http://<ip>:1400")
+    this.configOrigins = new Set(); // speakerUrls / apiAlbumArt from config
     this.registerWebhook();
+    this.registerAlbumArtProxy();
   },
 
   // Real-time updates: point node-sonos-http-api's "webhook" setting to
@@ -43,6 +49,81 @@ module.exports = NodeHelper.create({
     console.log('Sonos webhook listening on ' + path);
   },
 
+  // Album art proxy: the browser showing the mirror may not reach the
+  // speakers (other VLAN, no internet, or http images on an https page).
+  // The mirror fetches the image itself and serves it. Only URLs the Sonos
+  // API gave, or URLs on a known speaker, are fetched: not an open proxy.
+  registerAlbumArtProxy: function() {
+    var self = this;
+    this.expressApp.get('/' + this.name + '/albumart', function(req, res) {
+      var url = typeof req.query.url === 'string' ? req.query.url : '';
+      if (!self.isAllowedArt(url)) {
+        res.sendStatus(403);
+        return;
+      }
+      fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+        .then(function(response) {
+          var type = response.headers.get('content-type') || '';
+          if (!response.ok || type.indexOf('image/') !== 0) {
+            throw new Error('HTTP ' + response.status + ' ' + type);
+          }
+          return response.arrayBuffer().then(function(buffer) {
+            if (buffer.byteLength > MAX_ART_BYTES) {
+              throw new Error('image too big');
+            }
+            res.set('Content-Type', type);
+            res.set('Cache-Control', 'public, max-age=' + ART_CACHE_SECONDS);
+            res.send(Buffer.from(buffer));
+          });
+        })
+        .catch(function(error) {
+          console.error('Failure sonos album art: ' + error.message);
+          if (!res.headersSent) {
+            res.sendStatus(502);
+          }
+        });
+    });
+  },
+
+  originOf: function(url) {
+    try {
+      var u = new URL(url);
+      return (u.protocol === 'http:' || u.protocol === 'https:') ? u.origin : '';
+    } catch (e) {
+      return '';
+    }
+  },
+
+  isAllowedArt: function(url) {
+    var origin = this.originOf(url);
+    if (!origin) {
+      return false;
+    }
+    return this.artUrls.has(url) || this.artOrigins.has(origin) || this.configOrigins.has(origin);
+  },
+
+  // Remember the album art URLs of the last answer (and the speakers they
+  // come from), so the proxy knows what it may fetch.
+  rememberArt: function(zones) {
+    var self = this;
+    (Array.isArray(zones) ? zones : []).forEach(function(zone) {
+      var t = ((zone.coordinator || {}).state || {}).currentTrack || {};
+      [t.absoluteAlbumArtUri, t.albumArtUri].forEach(function(url) {
+        if (typeof url !== 'string' || !self.originOf(url)) {
+          return;
+        }
+        self.artUrls.add(url);
+        // Sonos serves the art itself on /getaa: that origin is a speaker
+        if (new URL(url).pathname === '/getaa') {
+          self.artOrigins.add(self.originOf(url));
+        }
+      });
+    });
+    if (this.artUrls.size > 500) {
+      this.artUrls = new Set(Array.from(this.artUrls).slice(-200));
+    }
+  },
+
   // force: send the data even if it did not change (the frontend asked,
   // e.g. a new browser window). Webhook calls only send real changes.
   fetchZones: function(force) {
@@ -62,6 +143,7 @@ module.exports = NodeHelper.create({
         return response.json();
       })
       .then(function(data) {
+        self.rememberArt(data);
         var json = JSON.stringify(self.slimZones(data));
         if (self.forceSend || json !== self.lastSent) {
           self.lastSent = json;
@@ -114,9 +196,18 @@ module.exports = NodeHelper.create({
     });
   },
 
-  socketNotificationReceived: function(notification, url) {
+  // payload: { url, artOrigins } (a plain URL string still works)
+  socketNotificationReceived: function(notification, payload) {
     if (notification === 'SONOS_UPDATE') {
-      this.url = url;
+      var self = this;
+      var data = typeof payload === 'string' ? { url: payload } : (payload || {});
+      this.url = data.url;
+      (Array.isArray(data.artOrigins) ? data.artOrigins : []).forEach(function(url) {
+        var origin = self.originOf(url);
+        if (origin) {
+          self.configOrigins.add(origin);
+        }
+      });
       this.fetchZones(true);
     }
   }
