@@ -1,214 +1,309 @@
-/* Magic Mirror 2
+/* MagicMirror²
  * Module: MMM-Sonos
  *
  * By Christopher Fenner https://github.com/CFenner
  * Modified by Snille https://github.com/Snille
  * MIT Licensed.
  */
-var NodeHelper = require('node_helper');
+const http = require('node:http');
+const https = require('node:https');
+const NodeHelper = require('node_helper');
 
 // node-sonos-http-api sends events in bursts (one per group member, plus
 // volume/topology changes): wait a bit and refresh only once.
-var WEBHOOK_DEBOUNCE_MS = 300;
-var FETCH_TIMEOUT_MS = 10000;
-var MAX_ART_BYTES = 5 * 1024 * 1024;
-var ART_CACHE_SECONDS = 86400;
+const REFRESH_DEBOUNCE_MS = 300;
+const FETCH_TIMEOUT_MS = 10000;
+// After this many failed requests in a row, hide the old song.
+const MAX_FAILURES = 3;
+// /events reconnect delays: quick after a normal drop, slow when the API
+// is down or too old to have /events (404).
+const EVENTS_RETRY_MS = 2000;
+const EVENTS_RETRY_MAX_MS = 5 * 60 * 1000;
+const MAX_ART_BYTES = 5 * 1024 * 1024;
+const ART_CACHE_SECONDS = 86400;
+
+// Reads a chunk of a server-sent events stream. Returns the unfinished
+// last line (to prepend to the next chunk) and whether a "data:" line was
+// seen. Comment / heartbeat lines (":") do not count as a change.
+function readEvents(buffer) {
+	const lines = buffer.split(/\r?\n/);
+	const rest = lines.pop();
+	return { rest, changed: lines.some((line) => line.startsWith('data:')) };
+}
 
 module.exports = NodeHelper.create({
-  start: function () {
-    console.log('Sonos helper started ...');
-    this.url = null;
-    this.webhookTimer = null;
-    this.fetching = false;     // a request is running
-    this.fetchAgain = false;   // another one was asked meanwhile
-    this.forceSend = false;    // send even if data did not change
-    this.lastSent = null;      // JSON of the last data sent
-    this.artUrls = new Set();     // album art URLs given by the API
-    this.artOrigins = new Set();  // speaker addresses ("http://<ip>:1400")
-    this.configOrigins = new Set(); // speakerUrls / apiAlbumArt from config
-    this.registerWebhook();
-    this.registerAlbumArtProxy();
-  },
+	readEvents,
 
-  // Real-time updates: point node-sonos-http-api's "webhook" setting to
-  // http://<mirror>:<port>/MMM-Sonos/webhook and it will POST here on every
-  // Sonos event. The body is not needed: we just re-fetch the zones.
-  registerWebhook: function() {
-    var self = this;
-    var path = '/' + this.name + '/webhook';
-    this.expressApp.post(path, function(req, res) {
-      res.sendStatus(200);
-      if (!self.url) {
-        return; // frontend not started yet, nothing to refresh
-      }
-      clearTimeout(self.webhookTimer);
-      self.webhookTimer = setTimeout(function() {
-        self.fetchZones(false);
-      }, WEBHOOK_DEBOUNCE_MS);
-    });
-    console.log('Sonos webhook listening on ' + path);
-  },
+	start() {
+		console.log('Sonos helper started ...');
+		this.zonesUrl = null;
+		this.eventsUrl = null;
+		this.eventsRequest = null;
+		this.eventsRetryMs = EVENTS_RETRY_MS;
+		this.refreshTimer = null;
+		this.fetching = false;   // a request is running
+		this.fetchAgain = false; // another one was asked meanwhile
+		this.forceSend = false;  // send even if data did not change
+		this.lastSent = null;    // JSON of the last data sent
+		this.failures = 0;       // failed requests in a row
+		this.stopped = false;
+		this.artUrls = new Set();        // album art URLs given by the API
+		this.artOrigins = new Set();     // speaker addresses ("http://<ip>:1400")
+		this.configOrigins = new Set();  // speakerUrls / apiAlbumArt from config
+		this.registerWebhook();
+		this.registerAlbumArtProxy();
+	},
 
-  // Album art proxy: the browser showing the mirror may not reach the
-  // speakers (other VLAN, no internet, or http images on an https page).
-  // The mirror fetches the image itself and serves it. Only URLs the Sonos
-  // API gave, or URLs on a known speaker, are fetched: not an open proxy.
-  registerAlbumArtProxy: function() {
-    var self = this;
-    this.expressApp.get('/' + this.name + '/albumart', function(req, res) {
-      var url = typeof req.query.url === 'string' ? req.query.url : '';
-      if (!self.isAllowedArt(url)) {
-        res.sendStatus(403);
-        return;
-      }
-      fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
-        .then(function(response) {
-          var type = response.headers.get('content-type') || '';
-          if (!response.ok || type.indexOf('image/') !== 0) {
-            throw new Error('HTTP ' + response.status + ' ' + type);
-          }
-          return response.arrayBuffer().then(function(buffer) {
-            if (buffer.byteLength > MAX_ART_BYTES) {
-              throw new Error('image too big');
-            }
-            res.set('Content-Type', type);
-            res.set('Cache-Control', 'public, max-age=' + ART_CACHE_SECONDS);
-            res.send(Buffer.from(buffer));
-          });
-        })
-        .catch(function(error) {
-          console.error('Failure sonos album art: ' + error.message);
-          if (!res.headersSent) {
-            res.sendStatus(502);
-          }
-        });
-    });
-  },
+	stop() {
+		this.stopped = true;
+		clearTimeout(this.refreshTimer);
+		clearTimeout(this.eventsTimer);
+		if (this.eventsRequest) {
+			this.eventsRequest.destroy();
+		}
+	},
 
-  originOf: function(url) {
-    try {
-      var u = new URL(url);
-      return (u.protocol === 'http:' || u.protocol === 'https:') ? u.origin : '';
-    } catch (e) {
-      return '';
-    }
-  },
+	// Older way to get real-time updates (the /events stream is simpler):
+	// node-sonos-http-api's "webhook" setting can POST here on every event.
+	registerWebhook() {
+		const path = `/${this.name}/webhook`;
+		this.expressApp.post(path, (req, res) => {
+			res.sendStatus(200);
+			this.scheduleRefresh();
+		});
+	},
 
-  isAllowedArt: function(url) {
-    var origin = this.originOf(url);
-    if (!origin) {
-      return false;
-    }
-    return this.artUrls.has(url) || this.artOrigins.has(origin) || this.configOrigins.has(origin);
-  },
+	// Album art proxy: the browser showing the mirror may not reach the
+	// speakers (other VLAN, no internet, or http images on an https page).
+	// The mirror fetches the image itself and serves it. Only URLs the Sonos
+	// API gave, or URLs on a known speaker, are fetched: not an open proxy.
+	registerAlbumArtProxy() {
+		this.expressApp.get(`/${this.name}/albumart`, (req, res) => {
+			const url = typeof req.query.url === 'string' ? req.query.url : '';
+			if (!this.isAllowedArt(url)) {
+				res.sendStatus(403);
+				return;
+			}
+			fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+				.then((response) => {
+					const type = response.headers.get('content-type') || '';
+					if (!response.ok || !type.startsWith('image/')) {
+						throw new Error(`HTTP ${response.status} ${type}`);
+					}
+					return response.arrayBuffer().then((buffer) => {
+						if (buffer.byteLength > MAX_ART_BYTES) {
+							throw new Error('image too big');
+						}
+						res.set('Content-Type', type);
+						res.set('Cache-Control', `public, max-age=${ART_CACHE_SECONDS}`);
+						res.send(Buffer.from(buffer));
+					});
+				})
+				.catch((error) => {
+					console.error(`Failure sonos album art: ${error.message}`);
+					if (!res.headersSent) {
+						res.sendStatus(502);
+					}
+				});
+		});
+	},
 
-  // Remember the album art URLs of the last answer (and the speakers they
-  // come from), so the proxy knows what it may fetch.
-  rememberArt: function(zones) {
-    var self = this;
-    (Array.isArray(zones) ? zones : []).forEach(function(zone) {
-      var t = ((zone.coordinator || {}).state || {}).currentTrack || {};
-      [t.absoluteAlbumArtUri, t.albumArtUri].forEach(function(url) {
-        if (typeof url !== 'string' || !self.originOf(url)) {
-          return;
-        }
-        self.artUrls.add(url);
-        // Sonos serves the art itself on /getaa: that origin is a speaker
-        if (new URL(url).pathname === '/getaa') {
-          self.artOrigins.add(self.originOf(url));
-        }
-      });
-    });
-    if (this.artUrls.size > 500) {
-      this.artUrls = new Set(Array.from(this.artUrls).slice(-200));
-    }
-  },
+	originOf(url) {
+		try {
+			const u = new URL(url);
+			return (u.protocol === 'http:' || u.protocol === 'https:') ? u.origin : '';
+		} catch {
+			return '';
+		}
+	},
 
-  // force: send the data even if it did not change (the frontend asked,
-  // e.g. a new browser window). Webhook calls only send real changes.
-  fetchZones: function(force) {
-    var self = this;
-    this.forceSend = this.forceSend || force;
-    if (this.fetching) {
-      // slow API or slow device: never run two requests at once
-      this.fetchAgain = true;
-      return;
-    }
-    this.fetching = true;
-    fetch(this.url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
-      .then(function(response) {
-        if (!response.ok) {
-          throw new Error('HTTP ' + response.status);
-        }
-        return response.json();
-      })
-      .then(function(data) {
-        self.rememberArt(data);
-        var json = JSON.stringify(self.slimZones(data));
-        if (self.forceSend || json !== self.lastSent) {
-          self.lastSent = json;
-          self.forceSend = false;
-          self.sendSocketNotification('SONOS_DATA', JSON.parse(json));
-        }
-      })
-      .catch(function(error) {
-        console.error('Failure sonos: ' + error.message);
-      })
-      .finally(function() {
-        self.fetching = false;
-        if (self.fetchAgain) {
-          self.fetchAgain = false;
-          self.fetchZones(false);
-        }
-      });
-  },
+	isAllowedArt(url) {
+		const origin = this.originOf(url);
+		if (!origin) {
+			return false;
+		}
+		return this.artUrls.has(url) || this.artOrigins.has(origin) || this.configOrigins.has(origin);
+	},
 
-  // The zones answer is big (full state of every speaker): keep only what
-  // the frontend shows, so less data goes over the socket and to the browser.
-  slimZones: function(zones) {
-    return (Array.isArray(zones) ? zones : []).map(function(zone) {
-      var c = zone.coordinator || {};
-      var state = c.state || {};
-      var t = state.currentTrack || {};
-      return {
-        members: (zone.members || []).map(function(m) { return { roomName: m.roomName }; }),
-        coordinator: {
-          uuid: c.uuid,
-          roomName: c.roomName,
-          groupState: { volume: (c.groupState || {}).volume },
-          state: {
-            playbackState: state.playbackState,
-            volume: state.volume,
-            elapsedTime: state.elapsedTime,
-            elapsedTimeFormatted: state.elapsedTimeFormatted,
-            currentTrack: {
-              uri: t.uri,
-              type: t.type,
-              artist: t.artist,
-              title: t.title,
-              duration: t.duration,
-              albumArtUri: t.albumArtUri,
-              absoluteAlbumArtUri: t.absoluteAlbumArtUri
-            }
-          }
-        }
-      };
-    });
-  },
+	// Remember the album art URLs of the last answer (and the speakers they
+	// come from), so the proxy knows what it may fetch.
+	rememberArt(zones) {
+		(Array.isArray(zones) ? zones : []).forEach((zone) => {
+			const t = ((zone.coordinator || {}).state || {}).currentTrack || {};
+			[t.absoluteAlbumArtUri, t.albumArtUri].forEach((url) => {
+				if (typeof url !== 'string' || !this.originOf(url)) {
+					return;
+				}
+				this.artUrls.add(url);
+				// Sonos serves the art itself on /getaa: that origin is a speaker
+				if (new URL(url).pathname === '/getaa') {
+					this.artOrigins.add(this.originOf(url));
+				}
+			});
+		});
+		if (this.artUrls.size > 500) {
+			this.artUrls = new Set(Array.from(this.artUrls).slice(-200));
+		}
+	},
 
-  // payload: { url, artOrigins } (a plain URL string still works)
-  socketNotificationReceived: function(notification, payload) {
-    if (notification === 'SONOS_UPDATE') {
-      var self = this;
-      var data = typeof payload === 'string' ? { url: payload } : (payload || {});
-      this.url = data.url;
-      (Array.isArray(data.artOrigins) ? data.artOrigins : []).forEach(function(url) {
-        var origin = self.originOf(url);
-        if (origin) {
-          self.configOrigins.add(origin);
-        }
-      });
-      this.fetchZones(true);
-    }
-  }
+	scheduleRefresh() {
+		if (!this.zonesUrl) {
+			return; // frontend not started yet, nothing to refresh
+		}
+		clearTimeout(this.refreshTimer);
+		this.refreshTimer = setTimeout(() => this.fetchZones(false), REFRESH_DEBOUNCE_MS);
+	},
+
+	// Real-time updates: keep a connection open to node-sonos-http-api's
+	// /events (server-sent events) and refresh the zones on every event.
+	connectEvents() {
+		const client = this.eventsUrl.startsWith('https:') ? https : http;
+		let connected = false;
+		let retried = false;
+		const retry = (message) => {
+			if (retried || this.stopped) {
+				return;
+			}
+			retried = true;
+			this.eventsRequest = null;
+			if (connected) {
+				// normal drop (API restarted, network blip): come back fast
+				console.log(`Sonos events: connection closed (${message}), reconnecting`);
+				this.eventsRetryMs = EVENTS_RETRY_MS;
+			} else {
+				if (this.eventsRetryMs === EVENTS_RETRY_MS) {
+					console.error(`Sonos events: cannot connect to ${this.eventsUrl} (${message}), retrying in the background`);
+				}
+				this.eventsRetryMs = Math.min(this.eventsRetryMs * 2, EVENTS_RETRY_MAX_MS);
+			}
+			this.eventsTimer = setTimeout(() => this.connectEvents(), connected ? EVENTS_RETRY_MS : this.eventsRetryMs);
+		};
+
+		const request = client.get(this.eventsUrl, { headers: { Accept: 'text/event-stream' } }, (res) => {
+			if (res.statusCode !== 200) {
+				res.resume();
+				retry(`HTTP ${res.statusCode}`);
+				return;
+			}
+			connected = true;
+			this.eventsRetryMs = EVENTS_RETRY_MS;
+			console.log(`Sonos events: connected to ${this.eventsUrl}`);
+			// we may have missed changes while disconnected
+			this.scheduleRefresh();
+			let buffer = '';
+			res.setEncoding('utf8');
+			res.on('data', (chunk) => {
+				const result = readEvents(buffer + chunk);
+				buffer = result.rest;
+				if (result.changed) {
+					this.scheduleRefresh();
+				}
+			});
+			res.on('end', () => retry('ended'));
+			res.on('error', (error) => retry(error.message));
+		});
+		request.on('error', (error) => retry(error.message));
+		this.eventsRequest = request;
+	},
+
+	// force: send the data even if it did not change (the frontend asked,
+	// e.g. a new browser window). Event refreshes only send real changes.
+	fetchZones(force) {
+		this.forceSend = this.forceSend || force;
+		if (this.fetching) {
+			// slow API or slow device: never run two requests at once
+			this.fetchAgain = true;
+			return;
+		}
+		this.fetching = true;
+		fetch(this.zonesUrl, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+			.then((response) => {
+				if (!response.ok) {
+					throw new Error(`HTTP ${response.status}`);
+				}
+				return response.json();
+			})
+			.then((data) => {
+				this.failures = 0;
+				this.rememberArt(data);
+				this.send(this.slimZones(data));
+			})
+			.catch((error) => {
+				this.failures++;
+				console.error(`Failure sonos: ${error.message}`);
+				if (this.failures >= MAX_FAILURES) {
+					// API gone: do not leave the last song on screen forever
+					this.send([]);
+				}
+			})
+			.finally(() => {
+				this.fetching = false;
+				if (this.fetchAgain) {
+					this.fetchAgain = false;
+					this.fetchZones(false);
+				}
+			});
+	},
+
+	send(zones) {
+		const json = JSON.stringify(zones);
+		if (this.forceSend || json !== this.lastSent) {
+			this.lastSent = json;
+			this.forceSend = false;
+			this.sendSocketNotification('SONOS_DATA', zones);
+		}
+	},
+
+	// The zones answer is big (full state of every speaker): keep only what
+	// the frontend shows, so less data goes over the socket and to the browser.
+	slimZones(zones) {
+		return (Array.isArray(zones) ? zones : []).map((zone) => {
+			const c = zone.coordinator || {};
+			const state = c.state || {};
+			const group = c.groupState || {};
+			const t = state.currentTrack || {};
+			return {
+				members: (zone.members || []).map((m) => ({ roomName: m.roomName })),
+				coordinator: {
+					uuid: c.uuid,
+					roomName: c.roomName,
+					groupState: { volume: group.volume, mute: group.mute },
+					state: {
+						playbackState: state.playbackState,
+						volume: state.volume,
+						mute: state.mute,
+						elapsedTime: state.elapsedTime,
+						currentTrack: {
+							uri: t.uri,
+							type: t.type,
+							artist: t.artist,
+							title: t.title,
+							duration: t.duration,
+							albumArtUri: t.albumArtUri,
+							absoluteAlbumArtUri: t.absoluteAlbumArtUri
+						}
+					}
+				}
+			};
+		});
+	},
+
+	socketNotificationReceived(notification, payload) {
+		if (notification !== 'SONOS_UPDATE') {
+			return;
+		}
+		const base = `${payload.apiBase}:${payload.apiPort}`;
+		(Array.isArray(payload.artOrigins) ? payload.artOrigins : []).forEach((url) => {
+			const origin = this.originOf(url);
+			if (origin) {
+				this.configOrigins.add(origin);
+			}
+		});
+		this.zonesUrl = `${base}/${payload.apiEndpoint}`;
+		if (payload.useEvents && !this.eventsUrl) {
+			this.eventsUrl = `${base}/events`;
+			this.connectEvents();
+		}
+		this.fetchZones(true);
+	}
 });

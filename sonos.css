@@ -1,32 +1,60 @@
 .sonos ul {
-  list-style-type: none;
-  padding: 0;
-  margin: 0;
+	list-style-type: none;
+	padding: 0;
+	margin: 0;
 }
 .sonos ul .name,
 .sonos ul .art {
-  display: inline-block;
-  vertical-align: middle;
+	display: inline-block;
+	vertical-align: middle;
 }
 .sonos ul .name {
-  padding: 0px .25em;
+	padding: 0 .25em;
 }
 .sonos ul .art img {
-  height: 100px;
+	height: 100px;
 }
 .sonos ul .art i {
-  font-size: 100px;
-  line-height: 100px;
+	font-size: 100px;
+	line-height: 100px;
 }
 .sonos ul .type,
 .sonos ul .room {
-  font-size: 50%;
-  padding: .25em .5em;
+	font-size: 50%;
+	padding: .25em .5em;
 }
 .sonos ul .song {
-	padding: 0px 0px;
+	padding: 0;
 	position: relative;
 }
-.sonos ul.flip {
-  direction: rtl;
+.sonos ul.flip .song {
+	/* left side of the mirror: album art first, then the text */
+	display: flex;
+	flex-direction: row-reverse;
+	justify-content: flex-end;
+	align-items: center;
+}
+.sonos .dontShow {
+	display: none;
+}
+
+/* Long titles scroll inside a fixed width */
+.sonos .title-wrapper {
+	max-width: 15em;
+	overflow: hidden;
+	white-space: nowrap;
+}
+.sonos .title-wrapper.scrolling {
+	width: 15em;
+	text-align: left;
+}
+.sonos .title.animation {
+	display: inline-block;
+	padding-left: 100%;
+	animation: sonos-scroll 15s linear infinite;
+	will-change: transform;
+}
+@keyframes sonos-scroll {
+	from { transform: translateX(0); }
+	to { transform: translateX(-100%); }
 }

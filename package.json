@@ -1,9 +1,21 @@
 {
   "name": "mmm-sonos",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "MagicMirror² module showing what is playing on Sonos speakers",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Perhan35/MMM-Sonos.git"
+  },
   "engines": {
     "node": ">=18"
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.5",
+    "eslint": "9.39.5"
   }
 }
